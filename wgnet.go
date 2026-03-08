@@ -20,6 +20,8 @@ type Configuration struct {
 
 	ServerPublicKey string
 	ServerEndpoint  string
+
+	PersistentKeepaliveInterval int
 }
 
 func (c *Configuration) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
@@ -29,7 +31,7 @@ func (c *Configuration) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
 		return nil, fmt.Errorf("unable to create tunnel: %v", err)
 	}
 
-	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, ""))
+	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelVerbose, "wgnet: "))
 
 	privkey, err := b64tohex(c.PrivateKey)
 	if err != nil {
@@ -41,13 +43,13 @@ func (c *Configuration) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
 		return nil, err
 	}
 
-	config := "private_key=" + privkey + "\n" +
-		"public_key=" + pubkey + "\n" +
-		"endpoint=" + c.ServerEndpoint + "\n" +
-		"allowed_ip=0.0.0.0/0\n"
-
-	err = dev.IpcSet(config)
-	if err != nil {
+	if err := dev.IpcSet(fmt.Sprintf(
+		"private_key=%s\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d",
+		privkey,
+		pubkey,
+		c.ServerEndpoint,
+		c.PersistentKeepaliveInterval,
+	)); err != nil {
 		return nil, fmt.Errorf("unable to configure device: %v", err)
 	}
 
