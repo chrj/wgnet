@@ -39,25 +39,26 @@ func NewDevice(c *Configuration) (*Device, error) {
 
 	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "wgnet: "))
 
-	privkey, err := wgb64tohex(c.PrivateKey)
+	privkey, err := b64tohex(c.PrivateKey)
 	if err != nil {
 		dev.Close()
 		return nil, fmt.Errorf("invalid private key: %v", err)
 	}
 
-	pubkey, err := wgb64tohex(c.ServerPublicKey)
-	if err != nil {
-		dev.Close()
-		return nil, fmt.Errorf("invalid public key: %v", err)
-	}
+	ipcConfig := fmt.Sprintf("private_key=%s\nreplace_peers=true\n", privkey)
 
-	ipcConfig := fmt.Sprintf(
-		"private_key=%s\nreplace_peers=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d",
-		privkey,
-		pubkey,
-		c.ServerEndpoint,
-		c.PersistentKeepaliveInterval,
-	)
+	if c.ServerPublicKey != "" {
+		pubkey, err := b64tohex(c.ServerPublicKey)
+		if err != nil {
+			dev.Close()
+			return nil, fmt.Errorf("invalid public key: %v", err)
+		}
+		ipcConfig += fmt.Sprintf("public_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d\n",
+			pubkey,
+			c.ServerEndpoint,
+			c.PersistentKeepaliveInterval,
+		)
+	}
 
 	if err := dev.IpcSet(ipcConfig); err != nil {
 		dev.Close()
@@ -77,12 +78,16 @@ func (d *Device) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
 	return d.tnet.ListenTCP(addr)
 }
 
+func (d *Device) DialTCP(addr *net.TCPAddr) (net.Conn, error) {
+	return d.tnet.DialTCP(addr)
+}
+
 func (d *Device) Close() error {
 	d.dev.Close()
 	return nil
 }
 
-func wgb64tohex(in string) (string, error) {
+func b64tohex(in string) (string, error) {
 	bytes, err := base64.StdEncoding.DecodeString(in)
 	if err != nil {
 		return "", fmt.Errorf("unable to decode base64: %v", err)
