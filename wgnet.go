@@ -9,6 +9,7 @@ import (
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/tun"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
@@ -24,51 +25,71 @@ type Configuration struct {
 	PersistentKeepaliveInterval int
 }
 
-func (c *Configuration) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
+type Device struct {
+	dev  *device.Device
+	tun  tun.Device
+	tnet *netstack.Net
+}
 
+func NewDevice(c *Configuration) (*Device, error) {
 	tun, tnet, err := netstack.CreateNetTUN([]netip.Addr{c.MyIPv4}, c.DNS, c.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create tunnel: %v", err)
 	}
 
-	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelVerbose, "wgnet: "))
+	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "wgnet: "))
 
-	privkey, err := b64tohex(c.PrivateKey)
+	privkey, err := wgb64tohex(c.PrivateKey)
 	if err != nil {
-		return nil, err
+		dev.Close()
+		return nil, fmt.Errorf("invalid private key: %v", err)
 	}
 
-	pubkey, err := b64tohex(c.ServerPublicKey)
+	pubkey, err := wgb64tohex(c.ServerPublicKey)
 	if err != nil {
-		return nil, err
+		dev.Close()
+		return nil, fmt.Errorf("invalid public key: %v", err)
 	}
 
-	if err := dev.IpcSet(fmt.Sprintf(
-		"private_key=%s\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d",
+	ipcConfig := fmt.Sprintf(
+		"private_key=%s\nreplace_peers=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d",
 		privkey,
 		pubkey,
 		c.ServerEndpoint,
 		c.PersistentKeepaliveInterval,
-	)); err != nil {
+	)
+
+	if err := dev.IpcSet(ipcConfig); err != nil {
+		dev.Close()
 		return nil, fmt.Errorf("unable to configure device: %v", err)
 	}
 
 	dev.Up()
 
-	listener, err := tnet.ListenTCP(addr)
-	if err != nil {
-		return nil, fmt.Errorf("listen error: %v", err)
-	}
-
-	return listener, nil
-
+	return &Device{
+		dev:  dev,
+		tun:  tun,
+		tnet: tnet,
+	}, nil
 }
 
-func b64tohex(in string) (string, error) {
+func (d *Device) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
+	return d.tnet.ListenTCP(addr)
+}
 
+func (d *Device) Close() error {
+	d.dev.Close()
+	return nil
+}
+
+func wgb64tohex(in string) (string, error) {
 	bytes, err := base64.StdEncoding.DecodeString(in)
 	if err != nil {
 		return "", fmt.Errorf("unable to decode base64: %v", err)
+	}
+
+	if len(bytes) != 32 {
+		return "", fmt.Errorf("invalid key length: expected 32 bytes, got %d", len(bytes))
 	}
 
 	return hex.EncodeToString(bytes), nil
