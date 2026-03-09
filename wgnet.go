@@ -87,7 +87,9 @@ func NewDevice(c *Configuration) (*Device, error) {
 		return nil, fmt.Errorf("unable to configure device: %v", err)
 	}
 
-	dev.Up()
+	if err := dev.Up(); err != nil {
+		return nil, fmt.Errorf("unable to bring up WireGuard device: %v", err)
+	}
 
 	return &Device{
 		dev:  dev,
