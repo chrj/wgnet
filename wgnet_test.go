@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPeerConnectivity(t *testing.T) {
@@ -64,6 +65,8 @@ func TestPeerConnectivity(t *testing.T) {
 		t.Fatalf("server failed to listen: %v", err)
 	}
 	defer ln.Close()
+
+	time.Sleep(5 * time.Second)
 
 	// Spin up echoServer
 
