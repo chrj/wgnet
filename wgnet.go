@@ -1,3 +1,5 @@
+// Package wgnet provides a thin frontend for user-space VPN connections using the Go
+// wireguard implementation running on the gVisor user-space network stack
 package wgnet
 
 import (
