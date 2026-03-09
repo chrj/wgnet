@@ -24,7 +24,7 @@ func TestPeerConnectivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server device: %v", err)
 	}
-	defer serverDev.Close()
+	defer func() { _ = serverDev.Close() }()
 
 	serverPort, err := getUDPPort(serverDev)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestPeerConnectivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client device: %v", err)
 	}
-	defer clientDev.Close()
+	defer func() { _ = clientDev.Close() }()
 
 	// Register Client on Server
 
@@ -62,7 +62,7 @@ func TestPeerConnectivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server failed to listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	// Spin up echoServer
 
@@ -74,12 +74,16 @@ func TestPeerConnectivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client failed to dial: %v", err)
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
-	clientConn.Write([]byte("testing"))
+	if _, err := clientConn.Write([]byte("testing")); err != nil {
+		t.Fatalf("failed to send to client connection: %v", err)
+	}
 	buf := make([]byte, 7)
-	io.ReadFull(clientConn, buf)
-	clientConn.Close()
+	if _, err := io.ReadFull(clientConn, buf); err != nil {
+		t.Fatalf("failed to read from client connection: %v", err)
+	}
+	_ = clientConn.Close()
 
 	if string(buf) != "testing" {
 		t.Errorf("expected testing, got %s", string(buf))
@@ -116,8 +120,8 @@ func echoServer(ln net.Listener) {
 		}
 
 		go func(c net.Conn) {
-			io.Copy(c, c)
-			c.Close()
+			_, _ = io.Copy(c, c)
+			_ = c.Close()
 		}(conn)
 	}
 }
