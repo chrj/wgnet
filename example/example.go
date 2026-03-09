@@ -11,7 +11,7 @@ import (
 )
 
 func handler(rw http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(rw, "Hello world\n")
+	_, _ = fmt.Fprintf(rw, "Hello world\n")
 }
 
 func main() {
@@ -26,7 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("unable to create device: %v", err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 
 	addr := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("10.42.0.60:80"))
 
