@@ -1,8 +1,7 @@
 package wgnet
 
 import (
-	"encoding/base64"
-	"encoding/hex"
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
@@ -25,6 +24,15 @@ type Configuration struct {
 	PersistentKeepaliveInterval int
 }
 
+func NewDefaultConfiguration() *Configuration {
+	return &Configuration{
+		DNS: []netip.Addr{netip.MustParseAddr("1.1.1.1")},
+		MTU: 1420,
+
+		PersistentKeepaliveInterval: 25,
+	}
+}
+
 type Device struct {
 	dev  *device.Device
 	tun  tun.Device
@@ -39,25 +47,38 @@ func NewDevice(c *Configuration) (*Device, error) {
 
 	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "wgnet: "))
 
-	privkey, err := wgb64tohex(c.PrivateKey)
+	privkey, err := b64tohex(c.PrivateKey)
 	if err != nil {
 		dev.Close()
 		return nil, fmt.Errorf("invalid private key: %v", err)
 	}
 
-	pubkey, err := wgb64tohex(c.ServerPublicKey)
-	if err != nil {
-		dev.Close()
-		return nil, fmt.Errorf("invalid public key: %v", err)
-	}
+	var ipcConfig string
 
-	ipcConfig := fmt.Sprintf(
-		"private_key=%s\nreplace_peers=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d",
-		privkey,
-		pubkey,
-		c.ServerEndpoint,
-		c.PersistentKeepaliveInterval,
-	)
+	if c.ServerPublicKey != "" {
+		// Peer mode
+
+		pubkey, err := b64tohex(c.ServerPublicKey)
+		if err != nil {
+			dev.Close()
+			return nil, fmt.Errorf("invalid server public key: %v", err)
+		}
+
+		ipcConfig = fmt.Sprintf("private_key=%s\nreplace_peers=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=%d\n",
+			privkey,
+			pubkey,
+			c.ServerEndpoint,
+			c.PersistentKeepaliveInterval,
+		)
+
+	} else {
+		// Server mode
+
+		ipcConfig = fmt.Sprintf("private_key=%s\nreplace_peers=true\n",
+			privkey,
+		)
+
+	}
 
 	if err := dev.IpcSet(ipcConfig); err != nil {
 		dev.Close()
@@ -73,24 +94,39 @@ func NewDevice(c *Configuration) (*Device, error) {
 	}, nil
 }
 
+func (d *Device) Dial(network, address string) (net.Conn, error) {
+	return d.tnet.Dial(network, address)
+}
+
+func (d *Device) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return d.tnet.DialContext(ctx, network, address)
+}
+
 func (d *Device) ListenTCP(addr *net.TCPAddr) (net.Listener, error) {
 	return d.tnet.ListenTCP(addr)
+}
+
+func (d *Device) DialTCP(addr *net.TCPAddr) (net.Conn, error) {
+	return d.tnet.DialTCP(addr)
+}
+
+func (d *Device) AddPeer(publicKey string, clientIP netip.Addr) error {
+	hexkey, err := b64tohex(publicKey)
+	if err != nil {
+		return fmt.Errorf("unable to convert peer public key to hex: %v", err)
+	}
+	err = d.dev.IpcSet(fmt.Sprintf(
+		"public_key=%s\nallowed_ip=%s/32",
+		hexkey,
+		clientIP.String(),
+	))
+	if err != nil {
+		return fmt.Errorf("failed to register client on server: %v", err)
+	}
+	return nil
 }
 
 func (d *Device) Close() error {
 	d.dev.Close()
 	return nil
-}
-
-func wgb64tohex(in string) (string, error) {
-	bytes, err := base64.StdEncoding.DecodeString(in)
-	if err != nil {
-		return "", fmt.Errorf("unable to decode base64: %v", err)
-	}
-
-	if len(bytes) != 32 {
-		return "", fmt.Errorf("invalid key length: expected 32 bytes, got %d", len(bytes))
-	}
-
-	return hex.EncodeToString(bytes), nil
 }
