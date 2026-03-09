@@ -1,7 +1,6 @@
 package wgnet
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -9,7 +8,6 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestPeerConnectivity(t *testing.T) {
@@ -66,8 +64,6 @@ func TestPeerConnectivity(t *testing.T) {
 	}
 	defer ln.Close()
 
-	time.Sleep(5 * time.Second)
-
 	// Spin up echoServer
 
 	go echoServer(ln)
@@ -83,6 +79,7 @@ func TestPeerConnectivity(t *testing.T) {
 	clientConn.Write([]byte("testing"))
 	buf := make([]byte, 7)
 	io.ReadFull(clientConn, buf)
+	clientConn.Close()
 
 	if string(buf) != "testing" {
 		t.Errorf("expected testing, got %s", string(buf))
@@ -110,8 +107,8 @@ func echoServer(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				log.Println("Server shutting down: listener closed.")
+			if operr, ok := err.(*net.OpError); ok && operr.Err.Error() == "endpoint is in invalid state" {
+				// Listener was shut down
 				return
 			}
 			log.Printf("Failed to accept connection: %#v\n", err)
@@ -119,11 +116,8 @@ func echoServer(ln net.Listener) {
 		}
 
 		go func(c net.Conn) {
-			defer c.Close()
-			_, err := io.Copy(c, c)
-			if err != nil && err != io.EOF {
-				log.Printf("Error echoing to client %s: %v\n", c.RemoteAddr(), err)
-			}
+			io.Copy(c, c)
+			c.Close()
 		}(conn)
 	}
 }
