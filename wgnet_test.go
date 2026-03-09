@@ -1,32 +1,90 @@
 package wgnet
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/netip"
 	"strings"
 	"testing"
-	"time"
-
-	"golang.org/x/crypto/curve25519"
 )
 
-func generateKeys() (string, string, error) {
-	var priv [32]byte
-	if _, err := io.ReadFull(rand.Reader, priv[:]); err != nil {
-		return "", "", err
+func TestPeerConnectivity(t *testing.T) {
+
+	// Spin up the server
+
+	serverKey := RandomKey()
+
+	serverConf := NewDefaultConfiguration()
+	serverConf.PrivateKey = serverKey.Private()
+	serverConf.MyIPv4 = netip.MustParseAddr("10.0.0.1")
+
+	serverDev, err := NewDevice(serverConf)
+	if err != nil {
+		t.Fatalf("failed to create server device: %v", err)
 	}
-	priv[0] &= 248
-	priv[31] &= 127
-	priv[31] |= 64
+	defer serverDev.Close()
 
-	var pub [32]byte
-	curve25519.ScalarBaseMult(&pub, &priv)
+	serverPort, err := getUDPPort(serverDev)
+	if err != nil {
+		t.Fatalf("unable to get server port: %v", err)
+	}
 
-	return base64.StdEncoding.EncodeToString(priv[:]), base64.StdEncoding.EncodeToString(pub[:]), nil
+	// Spin up the client
+
+	clientKey := RandomKey()
+	clientConf := NewDefaultConfiguration()
+	clientConf.PrivateKey = clientKey.Private()
+	clientConf.ServerPublicKey = serverKey.Public()
+	clientConf.ServerEndpoint = fmt.Sprintf("127.0.0.1:%d", serverPort)
+	clientConf.MyIPv4 = netip.MustParseAddr("10.0.0.2")
+
+	clientDev, err := NewDevice(clientConf)
+	if err != nil {
+		t.Fatalf("failed to create client device: %v", err)
+	}
+	defer clientDev.Close()
+
+	// Register Client on Server
+
+	if err := serverDev.AddPeer(clientKey.Public(), clientConf.MyIPv4); err != nil {
+		t.Fatalf("failed to add peer: %v", err)
+	}
+
+	// Configure the address for the test server
+
+	echoServerAddr := net.TCPAddrFromAddrPort(netip.AddrPortFrom(serverConf.MyIPv4, 8080))
+
+	// Configure listener for the test server
+
+	ln, err := serverDev.ListenTCP(echoServerAddr)
+	if err != nil {
+		t.Fatalf("server failed to listen: %v", err)
+	}
+	defer ln.Close()
+
+	// Spin up echoServer
+
+	go echoServer(ln)
+
+	// Call the echoServer from the client device
+
+	clientConn, err := clientDev.DialTCP(echoServerAddr)
+	if err != nil {
+		t.Fatalf("client failed to dial: %v", err)
+	}
+	defer clientConn.Close()
+
+	clientConn.Write([]byte("testing"))
+	buf := make([]byte, 7)
+	io.ReadFull(clientConn, buf)
+
+	if string(buf) != "testing" {
+		t.Errorf("expected testing, got %s", string(buf))
+	}
+
 }
 
 func getUDPPort(d *Device) (int, error) {
@@ -45,101 +103,24 @@ func getUDPPort(d *Device) (int, error) {
 	return 0, fmt.Errorf("listen_port not found in IPC config")
 }
 
-func TestTwoPeerConnectivity(t *testing.T) {
-	// 1. Generate keys
-	serverPriv, serverPub, _ := generateKeys()
-	clientPriv, clientPub, _ := generateKeys()
-
-	serverIP := netip.MustParseAddr("10.0.0.1")
-	clientIP := netip.MustParseAddr("10.0.0.2")
-
-	// 2. Start Server
-	serverConf := &Configuration{
-		MyIPv4:     serverIP,
-		PrivateKey: serverPriv,
-		MTU:        1420,
-	}
-	serverDev, err := NewDevice(serverConf)
-	if err != nil {
-		t.Fatalf("failed to create server device: %v", err)
-	}
-	defer serverDev.Close()
-
-	serverPort, err := getUDPPort(serverDev)
-	if err != nil {
-		t.Fatalf("failed to get server UDP port: %v", err)
-	}
-
-	// 3. Start Client
-	clientConf := &Configuration{
-		MyIPv4:          clientIP,
-		PrivateKey:      clientPriv,
-		ServerPublicKey: serverPub,
-		ServerEndpoint:  fmt.Sprintf("127.0.0.1:%d", serverPort),
-		MTU:             1420,
-	}
-	clientDev, err := NewDevice(clientConf)
-	if err != nil {
-		t.Fatalf("failed to create client device: %v", err)
-	}
-	defer clientDev.Close()
-
-	// 4. Register Client on Server
-	err = serverDev.dev.IpcSet(fmt.Sprintf("public_key=%s\nallowed_ip=%s/32",
-		b64tohex_test(clientPub), clientIP.String()))
-	if err != nil {
-		t.Fatalf("failed to register client on server: %v", err)
-	}
-
-	// 5. Test TCP: Server listens, Client dials
-	ln, err := serverDev.ListenTCP(net.TCPAddrFromAddrPort(netip.AddrPortFrom(serverIP, 8080)))
-	if err != nil {
-		t.Fatalf("server failed to listen: %v", err)
-	}
-	defer ln.Close()
-
-	done := make(chan bool)
-	go func() {
+func echoServer(ln net.Listener) {
+	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Println("Server shutting down: listener closed.")
+				return
+			}
+			log.Printf("Failed to accept connection: %v\n", err)
 			return
 		}
-		defer conn.Close()
 
-		buf := make([]byte, 5)
-		io.ReadFull(conn, buf)
-		if string(buf) == "HELLO" {
-			conn.Write([]byte("WORLD"))
-		}
-		done <- true
-	}()
-
-	// Wait for handshake/setup
-	time.Sleep(100 * time.Millisecond)
-
-	clientConn, err := clientDev.DialTCP(net.TCPAddrFromAddrPort(netip.AddrPortFrom(serverIP, 8080)))
-	if err != nil {
-		t.Fatalf("client failed to dial: %v", err)
+		go func(c net.Conn) {
+			defer c.Close()
+			_, err := io.Copy(c, c)
+			if err != nil && err != io.EOF {
+				log.Printf("Error echoing to client %s: %v\n", c.RemoteAddr(), err)
+			}
+		}(conn)
 	}
-	defer clientConn.Close()
-
-	clientConn.Write([]byte("HELLO"))
-	buf := make([]byte, 5)
-	io.ReadFull(clientConn, buf)
-
-	if string(buf) != "WORLD" {
-		t.Errorf("expected WORLD, got %s", string(buf))
-	}
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("test timed out")
-	}
-}
-
-// b64tohex_test is a helper because we need hex for IpcSet
-func b64tohex_test(in string) string {
-	b, _ := base64.StdEncoding.DecodeString(in)
-	return fmt.Sprintf("%x", b)
 }
