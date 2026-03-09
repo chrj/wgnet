@@ -99,6 +99,39 @@ func main() {
 }
 ```
 
+### WireGuard Server: Allow other WireGuard clients to connect to you
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"net/netip"
+
+	"github.com/chrj/wgnet"
+)
+
+func main() {
+	cfg := wgnet.NewDefaultConfiguration()
+	cfg.MyIPv4 = netip.MustParseAddr("10.42.0.2")
+	cfg.PrivateKey = "your-private-key"
+
+	dev, err := wgnet.NewDevice(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dev.Close()
+
+    dev.AddPeer("public-key-of-peer1", netip.MustParseAddr("10.42.0.3"))
+    dev.AddPeer("public-key-of-peer2", netip.MustParseAddr("10.42.0.4"))
+
+    for {} // wait forever
+
+}
+```
+
 ## License
 
 MIT - See [LICENSE](LICENSE) for details.
