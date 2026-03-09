@@ -16,18 +16,11 @@ func handler(rw http.ResponseWriter, req *http.Request) {
 
 func main() {
 
-	wgconf := &wgnet.Configuration{
-		MyIPv4: netip.MustParseAddr("10.42.0.60"),
-		DNS:    []netip.Addr{netip.MustParseAddr("1.1.1.1")},
-		MTU:    1420,
-
-		PrivateKey: "<output of wg genkey>",
-
-		ServerEndpoint:  "<ip address>:51820",
-		ServerPublicKey: "<output of wg pubkey>",
-
-		PersistentKeepaliveInterval: 25,
-	}
+	wgconf := wgnet.NewDefaultConfiguration()
+	wgconf.MyIPv4 = netip.MustParseAddr("10.42.0.60")
+	wgconf.PrivateKey = "<output of wg genkey>"
+	wgconf.ServerEndpoint = "<ip address>:51820"
+	wgconf.ServerPublicKey = "<output of wg pubkey>"
 
 	dev, err := wgnet.NewDevice(wgconf)
 	if err != nil {
