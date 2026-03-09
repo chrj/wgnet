@@ -111,7 +111,7 @@ func echoServer(ln net.Listener) {
 				log.Println("Server shutting down: listener closed.")
 				return
 			}
-			log.Printf("Failed to accept connection: %v\n", err)
+			log.Printf("Failed to accept connection: %#v\n", err)
 			return
 		}
 
