@@ -1,6 +1,6 @@
 module github.com/chrj/wgnet
 
-go 1.25.3
+go 1.25.8
 
 require (
 	golang.org/x/crypto v0.37.0
