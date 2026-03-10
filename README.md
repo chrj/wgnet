@@ -124,11 +124,10 @@ func main() {
 	}
 	defer dev.Close()
 
-    dev.AddPeer("public-key-of-peer1", netip.MustParseAddr("10.42.0.3"))
-    dev.AddPeer("public-key-of-peer2", netip.MustParseAddr("10.42.0.4"))
+	dev.AddPeer("public-key-of-peer1", netip.MustParseAddr("10.42.0.3"))
+	dev.AddPeer("public-key-of-peer2", netip.MustParseAddr("10.42.0.4"))
 
-    for {} // wait forever
-
+	for {} // wait forever
 }
 ```
 
