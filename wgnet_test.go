@@ -125,3 +125,32 @@ func echoServer(ln net.Listener) {
 		}(conn)
 	}
 }
+
+func TestServerListenPort(t *testing.T) {
+	// Grab a free UDP port to ask the device to bind.
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	port := pc.LocalAddr().(*net.UDPAddr).Port
+	_ = pc.Close()
+
+	conf := NewDefaultConfiguration()
+	conf.PrivateKey = RandomKey().Private()
+	conf.MyIPv4 = netip.MustParseAddr("10.0.0.1")
+	conf.ListenPort = port
+
+	dev, err := NewDevice(conf)
+	if err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	defer func() { _ = dev.Close() }()
+
+	got, err := getUDPPort(dev)
+	if err != nil {
+		t.Fatalf("get port: %v", err)
+	}
+	if got != port {
+		t.Errorf("listen_port = %d, want %d", got, port)
+	}
+}
