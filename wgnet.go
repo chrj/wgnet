@@ -23,6 +23,10 @@ type Configuration struct {
 	ServerPublicKey string
 	ServerEndpoint  string
 
+	// ListenPort fixes the UDP port the device binds in server mode (peers dial
+	// this). Zero lets WireGuard pick an ephemeral port (the default).
+	ListenPort int
+
 	PersistentKeepaliveInterval int
 }
 
@@ -79,6 +83,9 @@ func NewDevice(c *Configuration) (*Device, error) {
 		ipcConfig = fmt.Sprintf("private_key=%s\nreplace_peers=true\n",
 			privkey,
 		)
+		if c.ListenPort > 0 {
+			ipcConfig += fmt.Sprintf("listen_port=%d\n", c.ListenPort)
+		}
 
 	}
 
