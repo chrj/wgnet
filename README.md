@@ -1,7 +1,6 @@
 # wgnet
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/chrj/wgnet.svg)](https://pkg.go.dev/github.com/chrj/wgnet)
-[![Go Report Card](https://goreportcard.com/badge/github.com/chrj/wgnet)](https://goreportcard.com/report/github.com/chrj/wgnet)
 
 `wgnet` provides a thin frontend for user-space VPN connections using the [Go WireGuard implementation](https://git.zx2c4.com/wireguard-go/about/) running on the [gVisor user-space network stack](https://github.com/google/gvisor).
 
