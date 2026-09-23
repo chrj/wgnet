@@ -62,13 +62,21 @@ func TestParsePeers(t *testing.T) {
 		}
 	})
 
-	t.Run("a peer that never handshook has a zero time", func(t *testing.T) {
+	t.Run("a peer that never handshook reports no age", func(t *testing.T) {
 		got, err := parsePeers(ipcFixture(peerSection(t, hubKey, "", 0, 0, 0, 0)))
 		if err != nil {
 			t.Fatalf("parsePeers: %v", err)
 		}
 		if !got[0].LastHandshake.IsZero() {
 			t.Errorf("LastHandshake = %v, want the zero time", got[0].LastHandshake)
+		}
+		// The caller reads Age, not the timestamp, so assert that contract too.
+		age, ok := got[0].Age()
+		if ok {
+			t.Error("Age() ok = true, want false for a peer that never handshaked")
+		}
+		if age != 0 {
+			t.Errorf("Age() = %v, want 0 when there is no handshake", age)
 		}
 	})
 
@@ -121,6 +129,26 @@ func TestParsePeers(t *testing.T) {
 		)
 		if _, err := parsePeers(bad); err == nil {
 			t.Fatal("parsePeers accepted a malformed tx_bytes")
+		}
+	})
+}
+
+func TestPeerStatAge(t *testing.T) {
+	t.Run("measures from the last handshake", func(t *testing.T) {
+		p := PeerStat{LastHandshake: time.Now().Add(-90 * time.Second)}
+		age, ok := p.Age()
+		if !ok {
+			t.Fatal("Age() ok = false, want true for a peer that has handshaked")
+		}
+		if age < 90*time.Second || age > 95*time.Second {
+			t.Errorf("Age() = %v, want about 90s", age)
+		}
+	})
+
+	t.Run("reports nothing without a handshake", func(t *testing.T) {
+		age, ok := PeerStat{}.Age()
+		if ok || age != 0 {
+			t.Errorf("Age() = (%v, %v), want (0, false)", age, ok)
 		}
 	})
 }
