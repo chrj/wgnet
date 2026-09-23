@@ -130,6 +130,54 @@ func main() {
 }
 ```
 
+### Checking tunnel health
+
+`Peers` reports the live state of each peer. WireGuard rekeys a busy tunnel
+every couple of minutes, so a handshake that is suddenly many minutes old says
+the path to that peer is down. Dials keep being accepted either way, which makes
+this the signal that separates a dead tunnel from a slow answer at the far end.
+
+```go
+package main
+
+import (
+	"log"
+	"net/netip"
+
+	"github.com/chrj/wgnet"
+)
+
+func main() {
+	cfg := wgnet.NewDefaultConfiguration()
+	cfg.MyIPv4 = netip.MustParseAddr("10.42.0.2")
+	cfg.PrivateKey = "your-private-key"
+	cfg.ServerPublicKey = "server-public-key"
+	cfg.ServerEndpoint = "vpn.example.com:51820"
+
+	dev, err := wgnet.NewDevice(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dev.Close()
+
+	peers, err := dev.Peers()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, p := range peers {
+		age, ok := p.Age()
+		if !ok {
+			log.Printf("peer %s has never completed a handshake", p.PublicKey)
+			continue
+		}
+		log.Printf("peer %s: handshake %s ago, tx %d, rx %d", p.PublicKey, age, p.TxBytes, p.RxBytes)
+	}
+}
+```
+
+A `PeerStat` carries no key material other than the peer's own public key. The
+device's private key and any preshared key stay inside the device.
+
 ## License
 
 MIT - See [LICENSE](LICENSE) for details.

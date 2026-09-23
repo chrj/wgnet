@@ -34,6 +34,21 @@ func (k Key) Public() string {
 	return base64.StdEncoding.EncodeToString(pub[:])
 }
 
+// hextob64 converts a key from the hex encoding the device IPC uses to the
+// base64 encoding the WireGuard tools and this package's API print.
+func hextob64(in string) (string, error) {
+	bytes, err := hex.DecodeString(in)
+	if err != nil {
+		return "", fmt.Errorf("unable to decode hex: %w", err)
+	}
+
+	if len(bytes) != 32 {
+		return "", fmt.Errorf("invalid key length: expected 32 bytes, got %d", len(bytes))
+	}
+
+	return base64.StdEncoding.EncodeToString(bytes), nil
+}
+
 func b64tohex(in string) (string, error) {
 	bytes, err := base64.StdEncoding.DecodeString(in)
 	if err != nil {
