@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPeerConnectivity(t *testing.T) {
@@ -89,6 +90,31 @@ func TestPeerConnectivity(t *testing.T) {
 		t.Errorf("expected testing, got %s", string(buf))
 	}
 
+	// The tunnel just carried traffic, so the client must report a handshake
+	// with the server that happened moments ago.
+	peers, err := clientDev.Peers()
+	if err != nil {
+		t.Fatalf("failed to read peers: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("client lists %d peers, want 1", len(peers))
+	}
+	if peers[0].PublicKey != serverKey.Public() {
+		t.Errorf("peer key = %q, want %q", peers[0].PublicKey, serverKey.Public())
+	}
+	age, ok := peers[0].Age()
+	if !ok {
+		t.Fatal("peer reports no handshake after a successful exchange")
+	}
+	if age > time.Minute {
+		t.Errorf("handshake age = %v, want a recent one", age)
+	}
+	if peers[0].TxBytes == 0 || peers[0].RxBytes == 0 {
+		t.Errorf("tx/rx = %d/%d, want both above zero", peers[0].TxBytes, peers[0].RxBytes)
+	}
+	if peers[0].Endpoint == "" {
+		t.Error("peer endpoint is empty after a successful exchange")
+	}
 }
 
 func getUDPPort(d *Device) (int, error) {
