@@ -123,7 +123,7 @@ func getUDPPort(d *Device) (int, error) {
 		return 0, err
 	}
 
-	for _, line := range strings.Split(config, "\n") {
+	for line := range strings.SplitSeq(config, "\n") {
 		if strings.HasPrefix(line, "listen_port=") {
 			var port int
 			_, err := fmt.Sscanf(line, "listen_port=%d", &port)

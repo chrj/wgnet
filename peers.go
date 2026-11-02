@@ -61,7 +61,7 @@ func parsePeers(ipc string) ([]PeerStat, error) {
 		stamps []stamp
 	)
 
-	for _, line := range strings.Split(ipc, "\n") {
+	for line := range strings.SplitSeq(ipc, "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok {
 			continue
